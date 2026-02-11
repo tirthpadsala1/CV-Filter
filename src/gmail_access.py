@@ -80,6 +80,7 @@ class GmailAccess:
             logging.info(f"retrived details of {len(messages)} recent mails from inbox...")
 
             all_downloaded = []
+            senderInfo = {'sender':[] , 'subject':[]}
             logging.info(f"starting loop for retriving attachments..")
 
             for message in messages:
@@ -132,9 +133,12 @@ class GmailAccess:
                 if email_attachments:
                     all_downloaded.extend(email_attachments)
 
+                senderInfo['sender'].append(sender)
+                senderInfo['subject'].append(subject)
+
             logging.info(f"total file downloaded:{len(all_downloaded)}")
 
-            return all_downloaded
+            return all_downloaded , senderInfo
         
         except Exception as e:
             logging.info(f"found error {e}")
