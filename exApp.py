@@ -17,32 +17,23 @@ def index():
 
 
 @app.route('/api/download-gmail', methods=['POST'])
-def download_gmail():
+def downloadGmail():
     try:
-        gmail_client = GmailAccess(
+        client = GmailAccess(
             secretsPath=content["tokenPath"],
             Scopes=['https://www.googleapis.com/auth/gmail.readonly'],
             FolderOfAttachments=content["emailAttachmentsPath"]
         )
-        downloaded_files = gmail_client.downloadAttachments()
+        downloadedFiles , senderInfo = client.downloadAttachments()
         
         files_info = []
-        for file in downloaded_files:
+        for file in downloadedFiles:
             file_path = file['path']
-            file_size = os.path.getsize(file_path)
             
-            # Format file size
-            if file_size < 1024:
-                size_str = f"{file_size} B"
-            elif file_size < 1024 * 1024:
-                size_str = f"{file_size / 1024:.1f} KB"
-            else:
-                size_str = f"{file_size / (1024 * 1024):.1f} MB"
             
             files_info.append({
                 'name': file['filename'],
                 'path': file_path,
-                'size': size_str,
                 'sender': file.get('sender', 'Unknown'),
                 'subject': file.get('subject', 'No Subject')
             })
@@ -62,9 +53,6 @@ def download_gmail():
 
 @app.route('/api/list-files', methods=['GET'])
 def list_files():
-    """
-    List all downloaded files in the folder
-    """
     try:
         if not os.path.exists(content["emailAttachmentsPath"]):
             os.makedirs(content["emailAttachmentsPath"])
@@ -78,23 +66,11 @@ def list_files():
             file_path = os.path.join(content["emailAttachmentsPath"], filename)
             
             if os.path.isfile(file_path) and filename.lower().endswith(('.pdf', '.doc', '.docx')):
-                file_size = os.path.getsize(file_path)
-                
-                if file_size < 1024:
-                    size_str = f"{file_size} B"
-                elif file_size < 1024 * 1024:
-                    size_str = f"{file_size / 1024:.1f} KB"
-                else:
-                    size_str = f"{file_size / (1024 * 1024):.1f} MB"
                 
                 files_info.append({
                     'name': filename,
                     'path': file_path,
-                    'size': size_str
                 })
-        
-        # Sort by name
-        files_info.sort(key=lambda x: x['name'])
         
         return jsonify({
             'success': True,

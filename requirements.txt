@@ -3,9 +3,13 @@ google-auth-oauthlib
 google-auth-httplib2
 python-dateutil
 python-dotenv
+python-docx
 langchain 
 langchain-community 
 langchain-core 
 pdfplumber
 numpy 
 nltk
+sentence-transformer
+sklearn
+flask
