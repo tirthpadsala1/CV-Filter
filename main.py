@@ -5,7 +5,8 @@ from utils.var import content
 import sys
 from pathlib import Path
 
-from src.gmail_access import GmailAccess
+global senderInfo
+
 
 app = Flask(__name__)
 CORS(app)
@@ -17,32 +18,25 @@ def index():
 
 
 @app.route('/api/download-gmail', methods=['POST'])
-def download_gmail():
+def downloadGmail():
     try:
-        gmail_client = GmailAccess(
+        from src.pipelines.gmail_access import GmailAccess
+        client = GmailAccess(
             secretsPath=content["tokenPath"],
+            credentialsPath=content["credentialsPath"],
             Scopes=['https://www.googleapis.com/auth/gmail.readonly'],
             FolderOfAttachments=content["emailAttachmentsPath"]
         )
-        downloaded_files = gmail_client.downloadAttachments()
+        downloadedFiles , senderInfo = client.downloadAttachments()
         
         files_info = []
-        for file in downloaded_files:
+        for file in downloadedFiles:
             file_path = file['path']
-            file_size = os.path.getsize(file_path)
             
-            # Format file size
-            if file_size < 1024:
-                size_str = f"{file_size} B"
-            elif file_size < 1024 * 1024:
-                size_str = f"{file_size / 1024:.1f} KB"
-            else:
-                size_str = f"{file_size / (1024 * 1024):.1f} MB"
             
             files_info.append({
                 'name': file['filename'],
                 'path': file_path,
-                'size': size_str,
                 'sender': file.get('sender', 'Unknown'),
                 'subject': file.get('subject', 'No Subject')
             })
@@ -62,9 +56,6 @@ def download_gmail():
 
 @app.route('/api/list-files', methods=['GET'])
 def list_files():
-    """
-    List all downloaded files in the folder
-    """
     try:
         if not os.path.exists(content["emailAttachmentsPath"]):
             os.makedirs(content["emailAttachmentsPath"])
@@ -76,25 +67,11 @@ def list_files():
         files_info = []
         for filename in os.listdir(content["emailAttachmentsPath"]):
             file_path = os.path.join(content["emailAttachmentsPath"], filename)
-            
-            if os.path.isfile(file_path) and filename.lower().endswith(('.pdf', '.doc', '.docx')):
-                file_size = os.path.getsize(file_path)
                 
-                if file_size < 1024:
-                    size_str = f"{file_size} B"
-                elif file_size < 1024 * 1024:
-                    size_str = f"{file_size / 1024:.1f} KB"
-                else:
-                    size_str = f"{file_size / (1024 * 1024):.1f} MB"
-                
-                files_info.append({
+            files_info.append({
                     'name': filename,
-                    'path': file_path,
-                    'size': size_str
+                    'path': str(file_path),
                 })
-        
-        # Sort by name
-        files_info.sort(key=lambda x: x['name'])
         
         return jsonify({
             'success': True,
@@ -138,31 +115,26 @@ def filter_cvs():
     Replace this with your actual CV filtering logic
     """
     try:
-        # TODO: Replace with your actual CV filtering code
-        # Example: from your_cv_filter import filter_candidates
+
+        from src.pipelines.cv_classifier import CVClassifier
+        classifier = CVClassifier(downloadFolder=content["emailAttachmentsPath"])
         
-        # Get all CVs from download folder
         cv_files = []
-        for filename in os.listdir(content["emailAttachmentsPath"]):
-            file_path = os.path.join(content["emailAttachmentsPath"], filename)
-            if os.path.isfile(file_path) and filename.lower().endswith(('.pdf', '.doc', '.docx')):
-                cv_files.append({
-                    'name': filename,
-                    'path': file_path
-                })
-        
-        # Call your filtering function here
-        # filtered_results = your_filter_function(cv_files)
-        
-        # For now, return all files as example
-        # Replace this with actual filtered results
-        filtered_files = cv_files  # TODO: Replace with actual filtering
+        res = classifier.DirectoryLoop()
+        filtered_files = res["movedFiles"]
+        for i in filtered_files:
+            filename = str(os.path.basename(i))
+            path = str(i)
+
+            cv_files.append({
+                "name":filename,
+                "path":path
+            })
         
         return jsonify({
             'success': True,
-            'filtered_files': filtered_files,
-            'total_cvs': len(cv_files),
-            'qualified_cvs': len(filtered_files)
+            'filtered_files': cv_files,
+            'qualified_cvs': len(cv_files)
         })
     
     except Exception as e:
@@ -180,41 +152,30 @@ def calculate_ats():
     """
     try:
         # TODO: Replace with your actual ATS scoring code
-        # Example: from your_ats_scorer import calculate_scores
+        from src.pipelines.ats_scorrer import ATSscorer
         
-        # Get filtered CVs (or all CVs if no filtering was done)
-        cv_files = []
-        for filename in os.listdir(content["emailAttachmentsPath"]):
-            file_path = os.path.join(content["emailAttachmentsPath"], filename)
-            if os.path.isfile(file_path) and filename.lower().endswith(('.pdf', '.doc', '.docx')):
-                cv_files.append({
-                    'name': filename,
-                    'path': file_path
-                })
+        scorer = ATSscorer(
+            vectorDBpath=content["vectorDBPath"],
+            collectionName="job_roles_DB",
+            CVFolder=content["CVFolder"],
+            HFToken=content["HFTOKEN"]
+            )
+        
+        
         
         # Call your ATS scoring function here
-        # scores = your_ats_function(cv_files)
-        
-        # Example response (replace with actual scores)
-        scores = []
-        for cv in cv_files:
-            # TODO: Replace with actual ATS calculation
-            import random
-            score_data = {
-                'name': cv['name'],
-                'ats_score': random.randint(60, 95),  # Replace with actual score
-                'matched_skills': ['Python', 'Machine Learning', 'SQL'],  # Replace with actual matched skills
-                'missing_skills': ['AWS', 'Docker'],  # Replace with actual missing skills
-                'path': cv['path']
-            }
-            scores.append(score_data)
+        results = scorer.ATSscorrer_pipeline()
+
+        scores = [i["score"] for i in results]
         
         # Sort by score descending
-        scores.sort(key=lambda x: x['ats_score'], reverse=True)
+        scores = scores.sort(reverse=True)
+        
+
         
         return jsonify({
             'success': True,
-            'scores': scores
+            'scores': scores,
         })
     
     except Exception as e:
@@ -225,11 +186,10 @@ def calculate_ats():
 
 
 if __name__ == '__main__':
-    # Create download folder if it doesn't exist
     os.makedirs(content["emailAttachmentsPath"], exist_ok=True)
     
     print(" Starting HR CV Dashboard Server...")
-    print(f"Download folder: {os.path.abspath(content["emailAttachmentsPath"])}")
+    print(f"Download folder: {os.path.abspath(content['emailAttachmentsPath'])}")
     print(f"Access dashboard at: http://localhost:5000")
     
     app.run(debug=True, host='0.0.0.0', port=5000)
