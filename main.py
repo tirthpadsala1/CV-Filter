@@ -147,41 +147,120 @@ def filter_cvs():
 @app.route('/api/calculate-ats', methods=['POST'])
 def calculate_ats():
     """
-    Calculate ATS scores for CVs
-    Replace this with your actual ATS scoring logic
+    Calculate ATS scores for filtered CVs
+    
+    Returns:
+        JSON with ATS scores sorted by match percentage
     """
     try:
-        # TODO: Replace with your actual ATS scoring code
-        from src.pipelines.ats_scorrer import ATSscorer
         
+        from src.pipelines.ats_scorrer import ATSscorer
+
         scorer = ATSscorer(
             vectorDBpath=content["vectorDBPath"],
             collectionName="job_roles_DB",
             CVFolder=content["CVFolder"],
             HFToken=content["HFTOKEN"]
-            )
+        )
         
-        
-        
-        # Call your ATS scoring function here
+        # Calculate scores
         results = scorer.ATSscorrer_pipeline()
-
-        scores = [i["score"] for i in results]
         
-        # Sort by score descending
-        scores = scores.sort(reverse=True)
+        if not results:
+            return jsonify({
+                'success': True,
+                'scores': [],
+                'total_cvs': 0,
+                'message': 'No CVs found to process'
+            })
         
-
+        sorted_results = sorted(
+            results,
+            key=lambda x: x.get('score', 0),
+            reverse=True 
+        )
+        
+        def parse_summary(summary_text):
+            """Extract structured data from LLM summary"""
+            matched_skills = []
+            missing_skills = []
+            recommendation = ""
+            
+            if not summary_text or summary_text == "":
+                return matched_skills, missing_skills, recommendation
+            
+            lines = summary_text.split('\n')
+            current_section = None
+            
+            for line in lines:
+                line = line.strip()
+                
+                if 'MATCHED SKILLS' in line.upper():
+                    current_section = 'matched'
+                elif 'MISSING SKILLS' in line.upper():
+                    current_section = 'missing'
+                elif 'RECOMMENDATION' in line.upper():
+                    current_section = 'recommendation'
+                elif current_section == 'matched' and line and not line.startswith(('2.', '3.', '4.', '5.')):
+    
+                    skills = [s.strip() for s in line.replace('-', '').split(',') if s.strip()]
+                    matched_skills.extend(skills)
+                elif current_section == 'missing' and line and not line.startswith(('3.', '4.', '5.')):
+                    skills = [s.strip() for s in line.replace('-', '').split(',') if s.strip()]
+                    missing_skills.extend(skills)
+                elif current_section == 'recommendation' and line:
+                    recommendation = line
+            
+            return matched_skills, missing_skills, recommendation
+        
+        formatted_scores = []
+        for item in sorted_results:
+            matched_skills, missing_skills, recommendation = parse_summary(
+                item.get('summary', '')
+            )
+            
+            formatted_scores.append({
+                'name': item.get('filename', 'Unknown'),
+                'ats_score': item.get('score', 0),
+                'summary': item.get('summary', ''),
+                'matched_skills': matched_skills if matched_skills else ['N/A'],
+                'missing_skills': missing_skills if missing_skills else ['N/A'],
+                'recommendation': recommendation if recommendation else 'No recommendation available'
+            })
+        
         
         return jsonify({
             'success': True,
-            'scores': scores,
+            'scores': formatted_scores,
+            'total_cvs': len(formatted_scores),
+            'top_score': formatted_scores[0]['ats_score'] if formatted_scores else 0,
+            'average_score': round(sum(s['ats_score'] for s in formatted_scores) / len(formatted_scores), 2) if formatted_scores else 0
         })
     
-    except Exception as e:
+    except KeyError as e:
+        error_msg = f"Missing expected field in ATS results: {e}"
+
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': error_msg,
+            'error_type': 'KeyError'
+        }), 500
+    
+    except ZeroDivisionError:
+        error_msg = "No CVs available for ATS scoring"
+        return jsonify({
+            'success': False,
+            'error': error_msg,
+            'error_type': 'ZeroDivisionError'
+        }), 400
+    
+    except Exception as e:
+        error_msg = f"Error during ATS scoring: {str(e)}"
+        
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'error_type': type(e).__name__
         }), 500
 
 
