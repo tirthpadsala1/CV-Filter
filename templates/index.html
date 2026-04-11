@@ -326,7 +326,7 @@
             <div class="section">
                 <h2>View Downloaded CVs</h2>
                 <p>Browse and preview downloaded CV files</p>
-                <button class="btn btn-success" id="viewFilesBtn" onclick="loadFileList()" disabled>
+                <button class="btn btn-success" id="viewFilesBtn" onclick="loadFileList()">
                     View Downloaded Files
                 </button>
                 <div class="file-list" id="fileList"></div>
@@ -336,7 +336,7 @@
             <div class="section">
                 <h2>Filter CVs</h2>
                 <p>Apply intelligent filtering to identify qualified candidates</p>
-                <button class="btn btn-warning" id="filterBtn" onclick="filterCVs()" disabled>
+                <button class="btn btn-warning" id="filterBtn" onclick="filterCVs()">
                     Filter CVs
                 </button>
                 <div class="loading" id="filterLoading">
@@ -350,7 +350,7 @@
             <div class="section">
                 <h2>ATS Scoring</h2>
                 <p>Calculate ATS scores for all filtered CVs</p>
-                <button class="btn btn-primary" id="atsBtn" onclick="calculateATS()" disabled>
+                <button class="btn btn-primary" id="atsBtn" onclick="calculateATS()">
                     Calculate ATS Scores
                 </button>
                 <div class="loading" id="atsLoading">
@@ -400,14 +400,15 @@
                 const result = await response.json();
 
                 if (result.success) {
-                    downloadedFiles = result.files;
+                    downloadedFiles = result.files || [];
                     downloadStatus.innerHTML = `
                         <div class="status status-success">
-                            ✓ Successfully downloaded ${result.files.length} files
+                            ✓ Successfully downloaded ${downloadedFiles.length} files
                         </div>
                     `;
                     document.getElementById('viewFilesBtn').disabled = false;
-                    loadFileList();
+                    
+                    await loadFileList();
                 } else {
                     throw new Error(result.error || 'Download failed');
                 }
@@ -425,25 +426,34 @@
 
         async function loadFileList() {
             const fileList = document.getElementById('fileList');
-            
+            const filterBtn = document.getElementById('filterBtn');
+
             try {
                 const response = await fetch('/api/list-files');
                 const result = await response.json();
 
-                if (result.success && result.files.length > 0) {
+                if (result.success && result.files && result.files.length > 0) {
                     downloadedFiles = result.files;
-                    
-                    fileList.innerHTML = result.files.map((file, index) => `
-                        <div class="file-item" onclick="openFile('${file.path}', '${file.name}')">
+                    sender = result.sender;
+
+                    fileList.innerHTML = result.files.map((file) => `
+                        <div class="file-item" onclick="openFile('${escapeHtml(file.path)}', '${escapeHtml(file.name)}' , '${escapeHtml(sender)}')">
                             <svg class="file-icon" fill="currentColor" viewBox="0 0 20 20">
                                 <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"/>
                             </svg>
-                            <div class="file-name">${file.name}</div>
-                            <span class="status status-info">${file.size}</span>
+                            <div class="file-name">${escapeHtml(file.name)}</div>
+                            <div style="font-size: 12px; color: #888; margin-top: 3px;">
+                                From: ${escapeHtml(file.sender || 'Unknown')} 
+                                ${file.subject ? '· ' + escapeHtml(file.subject) : ''}
+                            </div>
+                            <span class="status status-info">${escapeHtml(file.size)}</span>
+                            <span class="status status-info">${escapeHtml(sender)}</span>
                         </div>
                     `).join('');
 
-                    document.getElementById('filterBtn').disabled = false;
+                    // ✅ Enable filter button whenever files are present
+                    if (filterBtn) filterBtn.disabled = false;
+
                 } else {
                     fileList.innerHTML = `
                         <div class="empty-state">
@@ -458,7 +468,7 @@
             } catch (error) {
                 fileList.innerHTML = `
                     <div class="status status-warning">
-                        ⚠ Error loading files: ${error.message}
+                        ⚠ Error loading files: ${escapeHtml(error.message)}
                     </div>
                 `;
             }
@@ -491,67 +501,121 @@
             document.getElementById('viewerIframe').src = '';
         }
 
-        // Function 4: Filter CVs
+        
         async function filterCVs() {
-            const filterBtn = document.getElementById('filterBtn');
-            const filterLoading = document.getElementById('filterLoading');
-            const filteredList = document.getElementById('filteredList');
+    const filterBtn = document.getElementById('filterBtn');
+    const filterLoading = document.getElementById('filterLoading');
+    const filteredList = document.getElementById('filteredList');
+    const qualifiedCount = document.getElementById('qualifiedCount');
+    const totalProcessed = document.getElementById('totalProcessed');
 
-            filterBtn.disabled = true;
-            filterLoading.classList.add('active');
-            filteredList.innerHTML = '';
+    filterBtn.disabled = true;
+    filterLoading.classList.add('active');
+    filteredList.innerHTML = '';
 
-            try {
-                // Call Python backend for CV filtering
-                const response = await fetch('/api/filter-cvs', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
+    try {
+        const response = await fetch('/api/filter-cvs', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                emailAttachmentsPath: './attachments'
+            })
+        });
 
-                const result = await response.json();
+        const result = await response.json();
 
-                if (result.success) {
-                    filteredFiles = result.filtered_files;
+        if (result.success) {
+            const filteredFiles = result.filtered_files || [];
+            const existingFiles = result.existing_files || [];
 
-                    if (filteredFiles.length > 0) {
-                        filteredList.innerHTML = `
-                            <div class="status status-success" style="margin-bottom: 15px;">
-                                ✓ Found ${filteredFiles.length} qualified candidates
-                            </div>
+            
+            const qualifiedCVs = (result.qualified_cvs || 0) + existingFiles.length;
+
+            
+            if (qualifiedCount) qualifiedCount.textContent = qualifiedCVs;
+            if (totalProcessed) totalProcessed.textContent = result.total_processed || (filteredFiles.length + existingFiles.length);
+
+            
+            const atsBtn = document.getElementById('atsBtn');
+            if (atsBtn && (filteredFiles.length > 0 || existingFiles.length > 0)) {
+                atsBtn.disabled = false;
+            }
+
+            
+            if (filteredFiles.length === 0 && existingFiles.length === 0) {
+                filteredList.innerHTML = `
+                    <div class="empty-state">
+                        <p>No qualified candidates found based on the filter criteria.</p>
+                        <p class="text-muted" style="font-size: 0.9em; margin-top: 10px;">
+                            Processed ${result.total_processed || 0} files, found 0 qualified CVs.
+                        </p>
+                    </div>
+                `;
+            } else {
+                filteredList.innerHTML = `
+                    <div class="status status-success" style="margin-bottom: 15px;">
+                        ✓ Found ${qualifiedCVs} qualified candidates 
+                        (${filteredFiles.length} new, ${existingFiles.length} existing)
+                    </div>
+
+                    ${filteredFiles.length > 0 ? `
+                        <div style="margin-bottom: 20px;">
+                            <h4>Newly Qualified (${filteredFiles.length})</h4>
                             ${filteredFiles.map(file => `
                                 <div class="file-item" onclick="openFile('${file.path}', '${file.name}')">
                                     <svg class="file-icon" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
+                                        <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"/>
                                     </svg>
-                                    <div class="file-name">${file.name}</div>
+                                    <div class="file-name">${escapeHtml(file.name)}</div>
+                                    <div style="font-size: 12px; color: #888; margin-top: 3px;">
+                                    From: ${escapeHtml(file.sender || 'Unknown')} 
+                                    ${file.subject ? '· ' + escapeHtml(file.subject) : ''}
+                                </div>
                                     <span class="status status-success">Qualified</span>
                                 </div>
                             `).join('')}
-                        `;
-                        document.getElementById('atsBtn').disabled = false;
-                    } else {
-                        filteredList.innerHTML = `
-                            <div class="empty-state">
-                                <p>No qualified candidates found based on the filter criteria.</p>
-                            </div>
-                        `;
-                    }
-                } else {
-                    throw new Error(result.error || 'Filtering failed');
-                }
-            } catch (error) {
-                filteredList.innerHTML = `
-                    <div class="status status-warning">
-                        ⚠ Error: ${error.message}
-                    </div>
+                        </div>
+                    ` : ''}
+
+                    ${existingFiles.length > 0 ? `
+                        <div style="margin-top: ${filteredFiles.length > 0 ? '20px' : '0'};">
+                            <h4>Previously Processed (${existingFiles.length})</h4>
+                            ${existingFiles.map(file => `
+                                <div class="file-item" onclick="openFile('${file.path}', '${file.name}')" style="opacity: 0.7;">
+                                    <svg class="file-icon" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"/>
+                                    </svg>
+                                    <div class="file-name">${escapeHtml(file.name)}</div>
+                                    <div style="font-size: 12px; color: #888; margin-top: 3px;">
+                                    From: ${escapeHtml(file.sender || 'Unknown')} 
+                                        ${file.subject ? '· ' + escapeHtml(file.subject) : ''}
+                                    </div>
+                                    <span class="status status-info">Already Processed</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
                 `;
-            } finally {
-                filterLoading.classList.remove('active');
-                filterBtn.disabled = false;
             }
+
+        } else {
+            throw new Error(result.error || 'Filtering failed');
         }
+
+    } catch (error) {
+        console.error('Filter CVs error:', error);
+        filteredList.innerHTML = `
+            <div class="status status-warning">
+                ⚠ Error: ${escapeHtml(error.message)}
+            </div>
+        `;
+    } finally {
+        filterLoading.classList.remove('active');
+        filterBtn.disabled = false;
+    }
+}
 
         // Function 5: Calculate ATS Scores
         async function calculateATS() {
@@ -578,7 +642,7 @@
                     atsScores = result.scores;
 
                     atsResults.innerHTML = atsScores.map(score => `
-                        <div class="score-card">
+                        <div class="score-card" onclick="openFile('${score.path}', '${score.name}')" style="cursor: pointer;">
                             <div class="score-header">
                                 <div>
                                     <h3 style="color: #333; margin-bottom: 5px;">${score.name}</h3>
@@ -607,6 +671,17 @@
                 atsLoading.classList.remove('active');
                 atsBtn.disabled = false;
             }
+        }
+
+        // Utility: Escape HTML to prevent XSS
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
         }
 
         // Load file list on page load if files exist

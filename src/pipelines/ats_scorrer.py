@@ -170,8 +170,10 @@ class ATSscorer:
                 include=["embeddings", "documents"]
             )
             
-            if role_embeddings and role_embeddings.get('embeddings'):
-                logging.info(f"func load_role_embeddings(): loaded embeddings for {role}")
+            if len(role_embeddings["embeddings"]) > 0:
+            
+                logging.info(f"type of role embeddings:{type(role_embeddings['embeddings'])}")
+                logging.info(f"suceessfully loaded embedings for {role}")
                 return role_embeddings
             else:
                 logging.warning(f"No embeddings found for role: {role}")
@@ -235,9 +237,6 @@ Candidate CV:
     def similarity_search(self, roleEmbeddings: list, CVEmbeddings: list):
        
         try:
-            if not roleEmbeddings or not CVEmbeddings:
-                logging.warning("Empty embeddings provided")
-                return 0.0
             
             roleEmbeddings = np.array(roleEmbeddings)
             CVEmbeddings = np.array(CVEmbeddings)
@@ -296,6 +295,7 @@ Candidate CV:
                         logging.warning(f"Failed to generate embeddings for {filename}")
                         results.append({
                             "filename": filename,
+                            "path": cv_path,
                             "score": 0,
                             "summary": "Failed to generate embeddings"
                         })
@@ -306,7 +306,7 @@ Candidate CV:
                        
                         role_data = self.load_role_embeddings(job_role)
                         
-                        if role_data and role_data.get('embeddings'):
+                        if len(role_data["embeddings"]) > 0:
                             
                             score = self.similarity_search(
                                 role_data["embeddings"],
@@ -319,6 +319,7 @@ Candidate CV:
                             
                             results.append({
                                 "filename": filename,
+                                "path": cv_path,
                                 "score": score,
                                 "summary": summary,
                                 "role": job_role  
@@ -329,6 +330,7 @@ Candidate CV:
                             logging.warning(f"No role data found for {job_role}")
                             results.append({
                                 "filename": filename,
+                                "path": cv_path,
                                 "score": 0,
                                 "summary": f"Role data not found for {job_role}",
                                 "role": job_role
@@ -337,6 +339,7 @@ Candidate CV:
     
                         results.append({
                             "filename": filename,
+                            "path": cv_path,
                             "score": 0,
                             "summary": f"Role not matched. LLM response: {job_role}",
                             "role": "unknown"
@@ -348,6 +351,7 @@ Candidate CV:
                     logging.error(f"Error processing {filename}: {cv_error}")
                     results.append({
                         "filename": filename,
+                        "path": cv_path,
                         "score": 0,
                         "summary": f"Error: {str(cv_error)}",
                         "role": "error"
@@ -355,6 +359,7 @@ Candidate CV:
             
            
             results.sort(key=lambda x: x.get('score', 0), reverse=True)
+            logging.info(f"{results}")
             
             logging.info(f"Completed processing {len(results)} CVs")
             logging.info(f"Average score: {sum(r['score'] for r in results) / len(results):.2f}" if results else "No results")

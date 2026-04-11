@@ -146,8 +146,12 @@ class CVClassifier:
             nonCV = []
             CV = []
 
+            CVFolder = Path(self.destinationPath)
+            ExistingFiles = list(CVFolder.iterdir())
+
             validExtension = {".pdf" , ".docx"}
             for path in folder.rglob("*"):
+
                 if path.suffix.lower() in validExtension:
                     fileName = os.path.basename(path)
                     if path.suffix.lower() == ".pdf":
@@ -169,11 +173,13 @@ class CVClassifier:
 
             actionPerformed = {
                 "movedFiles" : [],
-                "deletedFiles" : []            
+                "deletedFiles" : [],
+                "existingFiles" : ExistingFiles  
                 }
 
+
             for i in CV:
-                
+
                 shutil.move(i , self.destinationPath)
                 logging.info(f'''passed file:{fileName} , from:{path} , to:{content["CVFolder"]}''')
                 actionPerformed["movedFiles"].append(i)
@@ -184,7 +190,9 @@ class CVClassifier:
                 logging.info(f"deleted file:{fileName} , path:{path}")
                 actionPerformed["deletedFiles"].append(i)
             
+            logging.info(f"actiions performed:{actionPerformed}")
             return actionPerformed
+    
 
 
             
