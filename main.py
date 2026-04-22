@@ -5,10 +5,9 @@ from itertools import zip_longest
 from utils.var import content
 from utils.logging import logging
 import sys
+from datetime import datetime
 import json
 from pathlib import Path
-
-senderInfo = None
 
 
 app = Flask(__name__)
@@ -32,31 +31,25 @@ def downloadGmail():
 
         )
 
-        global senderInfo
-        downloadedFiles ,  senderInfo = client.downloadAttachments()
+        
+        download_info = client.downloadAttachments()
 
         
         
+        with open(content["MapPath"] , 'r') as f:
+            mapping_data = json.load(f)
+
         files_info = []
-        for file,info in zip(downloadedFiles , senderInfo):
-            if file == '_sender_map.json':  
-                continue
-            file_path = file['path']
-
-            sender_map = {f['name']: {'sender': f['sender'], 'subject': f['subject']} for f in files_info}
-            map_path = content["MapPath"]
-            with open(map_path, 'w') as mf:
-                json.dump(sender_map, mf , indent=4)
+        for file in mapping_data:
         
-        
+            if file['date/time'] == f"{datetime.now().strftime('%m_%d_%Y')}":
             
-            
-            files_info.append({
-                'name': file['filename'],
-                'path': file_path,
-                'sender': info.get('sender', 'Unknown'),
-                'subject': info.get('subject', 'No Subject')
-            })
+                files_info.append({
+                        'name': os.path.basename(file["path"]),
+                        'path': file["path"],
+                        'sender': file["sender"],
+                        'subject': file["subject"]
+                    })
         
         return jsonify({
             'success': True,
@@ -75,31 +68,48 @@ def downloadGmail():
 def list_files():
     try:
 
-        sender_map = {}
-        map_path = os.path.join(content["emailAttachmentsPath"], '_sender_map.json')
-        if os.path.exists(map_path):
-            with open(map_path, 'r') as mf:
-                sender_map = json.load(mf)
+        with open(content["MapPath"] , 'r') as f:
+            senders = json.load(f) 
+
+        for path in senders["path"]:
+            if not os.path.exists(path):
+                senders = [s for s in senders if s["path"] != path]
 
         if not os.path.exists(content["emailAttachmentsPath"]):
             os.makedirs(content["emailAttachmentsPath"])
-            return jsonify({
-                'success': True,
-                'files': []
-            })
+
+        
         
         files_info = []
-
-        folder = content["emailAttachmentsPath"] 
-        for filename in os.listdir(folder):
-            file_path = content["emailAttachmentsPath"] + '/' + filename
-                
+        for file in senders:
+        
+        
+            
             files_info.append({
-                    'name': filename,
-                    'sender': sender_map.get(filename, {}).get('sender', 'Unknown'),
-                    'subject': sender_map.get(filename, {}).get('subject', 'No Subject'),
-                    'path': str(file_path),
+                    'name': os.path.basename(file["path"]),
+                    'path': file["path"],
+                    'sender': file["sender"],
+                    'subject': file["subject"],
+                    'type': 'New downloaded'
                 })
+        
+
+        cv_folder = content["CVFolder"]
+        if os.path.exists(cv_folder):
+            for filename in os.listdir(cv_folder):
+                file_path = cv_folder + filename
+                for sender in senders:
+                    if filename == os.path.basename(sender["path"]):
+                        sender = sender["sender"]
+                        subject = sender["subject"]
+                if os.path.isfile(file_path):
+                    files_info.append({
+                        'name': filename,
+                        'sender': sender if sender else 'Unknown',
+                        'subject': subject if subject else 'No Subject',
+                        'path': str(file_path),
+                        'type': 'Existing CV'
+                    })
         
         return jsonify({
             'success': True,

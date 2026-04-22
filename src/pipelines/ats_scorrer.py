@@ -219,7 +219,6 @@ Candidate CV:
                 model="openai/gpt-oss-20b:groq",
                 messages=messages,
                 temperature=0,
-                max_tokens=500
             )
             
             summary = completion.choices[0].message.content.strip()

@@ -13,9 +13,9 @@ def part1():
             FolderOfAttachments=content["emailAttachmentsPath"],
         )
 
-        downloadedFiles,senders = client.downloadAttachments()
+        downloadedFiles = client.downloadAttachments()
 
-        return downloadedFiles , senders
+        return downloadedFiles
 
 
 
@@ -98,25 +98,18 @@ def part1():
 #       # results = scorer.ATSscorrer_pipeline()
 #       # print(results)
       
-      
+import os   
 
 if __name__=="__main__":
 
-    downloadedFiles,senders = part1()
+    downloaded = part1()
 
-    for file in downloadedFiles:
+    with open(content["MapPath"] , 'r') as f:
+        content = json.load(f)
+    for file in content:
+         print(f'''
+path: {file["path"]} , sender: {file["sender"]} , subject: {file["subject"]}
+''')
+
+    
    
-    senderMap = [
-          {
-          "filepath":downloadedFiles["path"][i],
-          "filename":downloadedFiles["filename"][i],
-          "sender":senders["sender"][i],
-          "subject":senders["subject"][i]
-          }
-
-          for i in range(len(downloadedFiles["path"]))
-    ]
-
-    mapPath = content["MapPath"]
-    with open(mapPath , 'w+') as f:
-          json.dump(senderMap , f , indent=4)

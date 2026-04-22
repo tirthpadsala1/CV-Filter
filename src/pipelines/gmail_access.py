@@ -4,6 +4,9 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from datetime import datetime
+import json
+from utils.var import content
 import os
 import sys
 import base64
@@ -82,7 +85,7 @@ class GmailAccess:
             logging.info(f"retrieved details of {len(messages)} recent mails from inbox")  
 
             all_downloaded = []
-            senderInfo = {'sender': [], 'subject': []}
+            senderInfo = []
             logging.info("starting loop for retrieving attachments") 
 
             for message in messages:
@@ -123,10 +126,15 @@ class GmailAccess:
                                         downloaded.append({'filename': filename, 'path': filepath})
                                         logging.info(f"from: {sender}")  
                                         logging.info(f"downloaded: {filename}")  
+
+                                        senderInfo.append({'path':filepath, 'sender': sender, 'subject': subject , 'date/time' : f"{datetime.now().strftime('%m_%d_%Y')}"})
+ 
+
                                     
                                     except Exception as download_error:  
                                         logging.error(f"failed to download {filename}: {download_error}") 
                                         continue
+
 
                         if 'parts' in part:
                             downloaded.extend(check_and_download_parts(part['parts'], msg_id))
@@ -140,12 +148,28 @@ class GmailAccess:
                 if email_attachments:
                     all_downloaded.extend(email_attachments)
 
-                senderInfo['sender'].append(sender)
-                senderInfo['subject'].append(subject)
+            # load existing sender info if exists
+            if os.path.exists(content["MapPath"]):
+                with open(content["MapPath"], "r") as f:
+                    try:
+                        data = json.load(f)
+                    except json.JSONDecodeError:
+                        data = []
+                    
+            else:
+                data = []  
+
+            data.extend(senderInfo)
+            
+
+            with open(content["MapPath"] , 'w') as f:
+                    json.dump(data, f, indent=4)
+
+                
 
             logging.info(f"total files downloaded: {len(all_downloaded)}")
 
-            return all_downloaded, senderInfo
+            return all_downloaded
         
         except Exception as e:
             logging.error(f"error in downloadAttachments: {e}") 
